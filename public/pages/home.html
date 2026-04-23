@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home - Music Playlist Generator</title>
+    <link rel="stylesheet" href="/styles/style.css">
+</head>
+<body>
+    <div class="home-container">
+        <header class="home-header">
+            <div class="header-content">
+                <h1>🎵 Music Playlist Generator</h1>
+                <button id="logoutBtn" class="btn btn-logout">Logout</button>
+            </div>
+            <p id="welcomeMsg" class="welcome-msg"></p>
+        </header>
+
+        <main class="home-main">
+            <section class="sidebar">
+                <div class="new-playlist-section">
+                    <h2>Create New Playlist</h2>
+                    <form id="newPlaylistForm">
+                        <input type="text" id="playlistName" placeholder="Enter playlist name" required>
+                        <button type="submit" class="btn btn-primary">Create</button>
+                    </form>
+                </div>
+            </section>
+
+            <section class="content">
+                <div id="playlistsList" class="playlists-grid"></div>
+            </section>
+        </main>
+
+        <!-- Modal for adding songs -->
+        <div id="songModal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h2>Add Song to Playlist</h2>
+                <form id="addSongForm">
+                    <input type="hidden" id="playlistId">
+                    <div class="form-group">
+                        <label for="songName">Song Name</label>
+                        <input type="text" id="songName" placeholder="Enter song name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="artist">Artist</label>
+                        <input type="text" id="artist" placeholder="Enter artist name" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Add Song</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/playlist.js"></script>
+    <script>
+        // Initialize
+        const user = JSON.parse(localStorage.getItem('user'));
+        if (!user) {
+            window.location.href = '/login';
+        }
+
+        document.getElementById('welcomeMsg').textContent = `Welcome back, ${user.username}! 👋`;
+
+        // Logout
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            localStorage.removeItem('user');
+            window.location.href = '/';
+        });
+
+        // Load playlists
+        async function loadPlaylists() {
+            try {
+                const response = await fetch(`/api/playlists/${user.email}`);
+                const data = await response.json();
+                displayPlaylists(data.playlists);
+            } catch (error) {
+                console.error('Error loading playlists:', error);
+            }
+        }
+
+        function displayPlaylists(playlists) {
+            const container = document.getElementById('playlistsList');
+            container.innerHTML = '';
+
+            if (playlists.length === 0) {
+                container.innerHTML = '<p class="empty-msg">No playlists yet. Create one to get started!</p>';
+                return;
+            }
+
+            playlists.forEach(playlist => {
+                const playlistCard = document.createElement('div');
+                playlistCard.className = 'playlist-card';
+                playlistCard.innerHTML = `
+                    <h3>${playlist.name}</h3>
+                    <p class="song-count">${playlist.songs.length} songs</p>
+                    <p class="created-date">Created: ${new Date(playlist.createdAt).toLocaleDateString()}</p>
+                    <button class="btn btn-secondary" onclick="openSongModal(${playlist.id})">Add Song</button>
+                    <div class="songs-list">
+                        ${playlist.songs.map(song => `
+                            <div class="song-item">
+                                <span>${song.name} - ${song.artist}</span>
+                                <button class="btn-delete" onclick="deleteSong(${playlist.id}, ${song.id})">×</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                container.appendChild(playlistCard);
+            });
+        }
+
+        // Create playlist
+        document.getElementById('newPlaylistForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const playlistName = document.getElementById('playlistName').value;
+
+            try {
+                const response = await fetch('/api/playlists', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: user.email, playlistName })
+                });
+
+                if (response.ok) {
+                    document.getElementById('newPlaylistForm').reset();
+                    loadPlaylists();
+                }
+            } catch (error) {
+                console.error('Error creating playlist:', error);
+            }
+        });
+
+        // Modal functionality
+        const modal = document.getElementById('songModal');
+        const closeBtn = document.querySelector('.close');
+
+        function openSongModal(playlistId) {
+            document.getElementById('playlistId').value = playlistId;
+            modal.style.display = 'block';
+        }
+
+        closeBtn.onclick = () => modal.style.display = 'none';
+        window.onclick = (event) => {
+            if (event.target === modal) modal.style.display = 'none';
+        };
+
+        document.getElementById('addSongForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const playlistId = document.getElementById('playlistId').value;
+            const songName = document.getElementById('songName').value;
+            const artist = document.getElementById('artist').value;
+
+            try {
+                const response = await fetch(`/api/playlists/${playlistId}/songs`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: user.email, songName, artist })
+                });
+
+                if (response.ok) {
+                    modal.style.display = 'none';
+                    document.getElementById('addSongForm').reset();
+                    loadPlaylists();
+                }
+            } catch (error) {
+                console.error('Error adding song:', error);
+            }
+        });
+
+        async function deleteSong(playlistId, songId) {
+            if (confirm('Delete this song?')) {
+                try {
+                    const response = await fetch(`/api/playlists/${playlistId}/songs/${songId}`, {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: user.email })
+                    });
+
+                    if (response.ok) {
+                        loadPlaylists();
+                    }
+                } catch (error) {
+                    console.error('Error deleting song:', error);
+                }
+            }
+        }
+
+        window.openSongModal = openSongModal;
+        window.deleteSong = deleteSong;
+
+        // Load playlists on page load
+        loadPlaylists();
+    </script>
+</body>
+</html>
